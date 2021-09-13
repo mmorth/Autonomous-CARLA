@@ -1,3 +1,11 @@
+# CARLA Large Files
+_out/
+CameraRGB/
+CameraRGB_Objs/
+GroundTruthRGB/
+models/
+Objects/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
