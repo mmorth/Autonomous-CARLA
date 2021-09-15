@@ -4,6 +4,7 @@ import json
 import os
 import numpy as np
 
+
 # Constants and global variables
 CLASSES = [4, 10, 12] # Classes according to CARLA's semantic segmentation sensor: https://carla.readthedocs.io/en/stable/cameras_and_sensors/
 
@@ -32,8 +33,9 @@ for episode in episodes:
             upper_tag_range = np.array([0,0,tag], dtype = "uint16")
             tag_mask = cv2.inRange(img, lower_tag_range, upper_tag_range)
 
-            # TODO: Determine whether to save the masks as well for training
+            # TODO: Determine whether to save the masks as well for training a masked CNN
 
+            # TODO: Determine whether to include these morphological operations in the pre-processing
             # se = cv2.getStructuringElement(cv2.MORPH_RECT,(3,3))
             # closing = cv2.morphologyEx(tag_mask, cv2.MORPH_CLOSE, se)
 
@@ -44,9 +46,16 @@ for episode in episodes:
             contours, hierarchy = cv2.findContours(tag_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
             for cnt in contours:
-                # TODO: Handle overlapping classes (e.g. 2 vehicles with overlapping ROIs that make it look like 1 ROI) (could manually label in this case)
+                # Handle overlapping classes (e.g. 2 vehicles with overlapping ROIs that make it look like 1 ROI) (could manually label in this case)
+                    # This would be an issue since both would be in the same class, so you can classify the entire blob as one class even if they are separate objects
+                    # The only area this may be an issue is when doing visual odometry or object tracking, but you could use the previous motion model to track its position
                 # TODO: Handle situations when there is a gap (e.g. between arm and body) that creates a separate detection (maybe require certain area for detection?)
+                    # This could be handled by using morphological operations to remove or reduce these, but you would need to be careful not to join two separate objects as a result
+                    # This could also be handled by having a minimum area requirement for the detected object annotation
+                    # Additionally, storing all detected boxes and using Non-Maximum Suppression to remove duplicate detections could work
                 # TODO: Remove duplicate detections for the same object or when one object gets detected as two (for split masks) (maybe morphological operations?)
+                    # This could be resolved by the area requirement as this would only likely occur for objects far away.
+                    # Additionally, morphological operations could be done to reduce these affects
                 if cv2.contourArea(cnt) > 200:
                     x,y,w,h = cv2.boundingRect(cnt)
                     data['objects'].append({
@@ -56,8 +65,8 @@ for episode in episodes:
                         "x1": x+w,
                         "y1": y+h
                     })
-                    x,y,w,h = cv2.boundingRect(cnt)
-                    cv2.rectangle(tag_mask,(x,y),(x+w,y+h),(255,255,255),1)
+                    # x,y,w,h = cv2.boundingRect(cnt)
+                    # cv2.rectangle(tag_mask,(x,y),(x+w,y+h),(255,255,255),1)
                     # cv2.imshow("Box", tag_mask)
                     # cv2.waitKey(0)
 

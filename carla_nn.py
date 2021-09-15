@@ -256,13 +256,13 @@ def predict_ground_truth_results(model):
 # Main Method
 def main():
     # Train and save model on new data
-    # model = train_and_validate_nn()
-    # save_nn_model(model, 0)
+    model = train_and_validate_nn()
+    save_nn_model(model, 0)
 
     # # Load model and predict (use pre-trained OR loaded model)
     # model = get_model_instance_segmentation()
-    model = load_nn_model(0)
-    predict_ground_truth_results(model)
+    # model = load_nn_model(0)
+    # predict_ground_truth_results(model)
 
 
 if __name__ == "__main__":
