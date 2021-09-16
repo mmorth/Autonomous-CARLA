@@ -295,7 +295,7 @@ class PointCloud(SensorData):
             def __next__(self):
                 self.index += 1
                 if self.index >= len(self.point_cloud):
-                    raise StopIteration
+                    return
                 return self.point_cloud[self.index]
 
             def next(self):

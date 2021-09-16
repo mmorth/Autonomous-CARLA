@@ -171,7 +171,7 @@ class CarlaClient(object):
         while True:
             data = self._stream_client.read()
             if not data:
-                raise StopIteration
+                return
             yield self._parse_sensor_data(data)
 
     def _parse_sensor_data(self, data):

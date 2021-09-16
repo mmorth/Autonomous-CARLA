@@ -11,12 +11,20 @@
 from __future__ import print_function
 
 import argparse
+from carla_nn import CLASSES, COLORS
 import cv2
+from numpy.testing._private.utils import measure
+import keyboard
 import logging
+import os
 import random
 import time
+import torch
+
+import numpy as np
 
 from carla.client import make_carla_client
+from carla.image_converter import to_bgra_array, depth_to_array
 from carla.sensor import Camera, Lidar
 from carla.settings import CarlaSettings
 from carla.tcp import TCPConnectionError
@@ -24,46 +32,85 @@ from carla.util import print_over_same_line
 
 from carla.client import make_carla_client, VehicleControl
 
-import pygame
-from pygame.locals import K_DOWN
-from pygame.locals import K_LEFT
-from pygame.locals import K_RIGHT
-from pygame.locals import K_SPACE
-from pygame.locals import K_UP
-from pygame.locals import K_a
-from pygame.locals import K_d
-from pygame.locals import K_p
-from pygame.locals import K_q
-from pygame.locals import K_r
-from pygame.locals import K_s
-from pygame.locals import K_w
+import transforms as T
+
+# TODO: Update into a Python class
+# State variables 
+reverse_on = False
+enable_autopilot = False
+
+
+MIN_CONFIDENCE = 0.8
+TRAIN_TEST_SPLIT = 0.8
+IMAGE_DIR = "_out"
+GROUND_TRUTH_DIR = "GroundTruthRGB"
+LABEL_DIR = "Objects"
+FRAMES_PER_EPISODE = 1000
 
 
 # Receives the keyboard inputs from the user
-def get_keyboard_control(self, keys):
+def get_keyboard_control():
     """
     Return a VehicleControl message based on the pressed keys. Return None
     if a new episode was requested.
     """
-    if keys[K_r]:
-        return None
     control = VehicleControl()
-    if keys[K_LEFT] or keys[K_a]:
+    if keyboard.is_pressed('a'):
         control.steer = -1.0
-    if keys[K_RIGHT] or keys[K_d]:
+    if keyboard.is_pressed('d'):
         control.steer = 1.0
-    if keys[K_UP] or keys[K_w]:
+    if keyboard.is_pressed('w'):
         control.throttle = 1.0
-    if keys[K_DOWN] or keys[K_s]:
+    if keyboard.is_pressed('s'):
         control.brake = 1.0
-    if keys[K_SPACE]:
-        control.hand_brake = True
-    if keys[K_q]:
-        self._is_on_reverse = not self._is_on_reverse
-    if keys[K_p]:
-        self._enable_autopilot = not self._enable_autopilot
-    control.reverse = self._is_on_reverse
+    # if keys[K_SPACE]:
+    #     control.hand_brake = True
+    if keyboard.is_pressed('q'):
+        global reverse_on
+        reverse_on = not reverse_on
+    if keyboard.is_pressed('p'):
+        global enable_autopilot
+        enable_autopilot = not enable_autopilot
+    control.reverse = reverse_on
     return control
+
+
+# Visualizes predictions
+# Source: https://www.pyimagesearch.com/2021/08/02/pytorch-object-detection-with-pre-trained-networks/
+def visualize_predictions(orig, detections):
+    global MIN_CONFIDENCE
+    global CLASSES
+    global COLORS
+    # loop over the detections
+    print("Found " + str(len(detections["boxes"])) + " detections!")
+    for i in range(0, len(detections["boxes"])):
+        # extract the confidence (i.e., probability) associated with the
+        # prediction
+        confidence = detections["scores"][i]
+        # filter out weak detections by ensuring the confidence is
+        # greater than the minimum confidence
+        if confidence > MIN_CONFIDENCE:
+            # extract the index of the class label from the detections,
+            # then compute the (x, y)-coordinates of the bounding box
+            # for the object
+            idx = int(detections["labels"][i])
+            if idx not in CLASSES:
+                idx = 25
+            box = detections["boxes"][i].detach().cpu().numpy()
+            (startX, startY, endX, endY) = box.astype("int")
+            # display the prediction to our terminal
+            label = "{}: {:.2f}%".format(CLASSES[idx], confidence * 100)
+            print("[INFO] {}".format(label))
+            # draw the bounding box and label on the image
+            cv2.rectangle(orig, (startX, startY), (endX, endY),
+                COLORS[idx-1], 2)
+            y = startY - 15 if startY - 15 > 15 else startY + 15
+            cv2.putText(orig, label, (startX, y),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx-1], 2)
+
+    # show the output image
+    cv2.imshow("CameraRGB", orig)
+    cv2.waitKey(1)
 
 
 def run_carla_client(args):
@@ -74,6 +121,11 @@ def run_carla_client(args):
     # context manager makes sure the connection is always cleaned up on exit.
     with make_carla_client(args.host, args.port) as client:
         print('CarlaClient connected')
+        
+        # TODO: Load object detection model
+        model = torch.load(os.path.join(os.getcwd(), "models", 'model' + str(0) + '.pt'))
+        model = model.cuda()
+        print("Successfully loaded model!")
 
         # Start a new simulation environment
         if args.settings_filepath is None:
@@ -164,15 +216,38 @@ def run_carla_client(args):
             # Print some of the measurements.
             print_measurements(measurements)
 
+            # TODO: View the captured images in real-time
             # Save the images to disk if requested.
-            if args.save_images_to_disk:
-                for name, measurement in sensor_data.items():
-                    if name == 'CameraRGB':
-                        cv2.imshow("RGB", measurement)
+            for name, measurement in sensor_data.items():
+                if name == 'CameraRGB':
+                    # Obtain and detect objects on the RGB image
+                    img = to_bgra_array(measurement)
+                    orig = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+
+                    # TODO: detect object locations using trained model
+                    transform = T.ToTensor()
+                    input = transform(orig)[0]
+                    img = input.unsqueeze_(0)
+                    model.eval()
+                    pred = model(input.cuda())[0]
+                    visualize_predictions(orig, pred)
+                elif name == 'CameraDepth':
+                    # Obtain and display the depth image
+                    depth_img = depth_to_array(measurement)
+
+                    # TODO: Compute the object's depth
+                    # in_meters = 1000 * depth_img[x,y]
+
+                    cv2.imshow("CameraDepth", depth_img)
+                    cv2.waitKey(1)
 
             # Send the position to the client
-            control = get_keyboard_control(pygame.key.get_pressed())
-            client.send_control(control)
+            control = get_keyboard_control()
+
+            if enable_autopilot:
+                client.send_control(measurements.player_measurements.autopilot_control)
+            else:
+                client.send_control(control)
 
 
 def print_measurements(measurements):
