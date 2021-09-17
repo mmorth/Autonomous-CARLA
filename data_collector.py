@@ -11,9 +11,12 @@
 from __future__ import print_function
 
 import argparse
+from carla.image_converter import to_rgb_array
 import logging
 import random
 import time
+import numpy as np
+from PIL import Image
 
 from carla.client import make_carla_client
 from carla.sensor import Camera, Lidar
@@ -24,7 +27,7 @@ from carla.util import print_over_same_line
 
 def run_carla_client(args):
     # Here we will run 3 episodes with 300 frames each.
-    number_of_episodes = 10
+    number_of_episodes = 50
     frames_per_episode = 1000
 
     # We assume the CARLA server is already waiting for a client to connect at
@@ -125,8 +128,13 @@ def run_carla_client(args):
                 # Save the images to disk if requested.
                 if args.save_images_to_disk:
                     for name, measurement in sensor_data.items():
-                        filename = args.out_filename_format.format(episode, name, episode, frame)
-                        measurement.save_to_disk(filename)
+                        # Crop hood from captured measurements
+                        img = to_rgb_array(measurement)
+                        img = img[0: 390, 0: 799]
+
+                        im = Image.fromarray(img)
+                        filename = args.out_filename_format.format(episode, name, episode, frame) + ".png"
+                        im.save(filename)
 
                 # We can access the encoded data of a given image as numpy
                 # array using its "data" property. For instance, to get the

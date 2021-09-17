@@ -56,7 +56,7 @@ for episode in episodes:
                 # TODO: Remove duplicate detections for the same object or when one object gets detected as two (for split masks) (maybe morphological operations?)
                     # This could be resolved by the area requirement as this would only likely occur for objects far away.
                     # Additionally, morphological operations could be done to reduce these affects
-                if cv2.contourArea(cnt) > 200:
+                if cv2.contourArea(cnt) > 200 and cv2.contourArea(cnt) < 100000:
                     x,y,w,h = cv2.boundingRect(cnt)
                     data['objects'].append({
                         "label": tag,

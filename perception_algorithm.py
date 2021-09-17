@@ -39,7 +39,7 @@ import transforms as T
 reverse_on = False
 enable_autopilot = False
 
-
+# Constants
 MIN_CONFIDENCE = 0.8
 TRAIN_TEST_SPLIT = 0.8
 IMAGE_DIR = "_out"
@@ -77,7 +77,7 @@ def get_keyboard_control():
 
 # Visualizes predictions
 # Source: https://www.pyimagesearch.com/2021/08/02/pytorch-object-detection-with-pre-trained-networks/
-def visualize_predictions(orig, detections):
+def visualize_predictions(orig, depth_img, detections):
     global MIN_CONFIDENCE
     global CLASSES
     global COLORS
@@ -98,14 +98,25 @@ def visualize_predictions(orig, detections):
                 idx = 25
             box = detections["boxes"][i].detach().cpu().numpy()
             (startX, startY, endX, endY) = box.astype("int")
-            # display the prediction to our terminal
+            
+            # compute depth information from the depth map
             label = "{}: {:.2f}%".format(CLASSES[idx], confidence * 100)
+            slice = depth_img[startY: endY, startX: endX]
+            depth = np.average(slice)
+            distance = 1000 * depth
+            label_distance = "{}m".format(distance)
+
+            # display the prediction to our terminal
             print("[INFO] {}".format(label))
+            print("[INFO] {}".format(label_distance))
             # draw the bounding box and label on the image
             cv2.rectangle(orig, (startX, startY), (endX, endY),
                 COLORS[idx-1], 2)
             y = startY - 15 if startY - 15 > 15 else startY + 15
+            yd = startY - 30 if startY - 30 > 30 else startY + 30
             cv2.putText(orig, label, (startX, y),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx-1], 2)
+            cv2.putText(orig, label_distance, (startX, yd),
             cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx-1], 2)
 
     # show the output image
@@ -207,6 +218,7 @@ def run_carla_client(args):
 
         # Iterate every frame in the simulation
         frame = 0
+        depth_img = np.zeros((800, 600, 1), dtype = "uint8")
         while True:
             frame += 1
 
@@ -230,7 +242,7 @@ def run_carla_client(args):
                     img = input.unsqueeze_(0)
                     model.eval()
                     pred = model(input.cuda())[0]
-                    visualize_predictions(orig, pred)
+                    visualize_predictions(orig, depth_img, pred)
                 elif name == 'CameraDepth':
                     # Obtain and display the depth image
                     depth_img = depth_to_array(measurement)
