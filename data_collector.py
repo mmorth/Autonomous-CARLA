@@ -13,6 +13,7 @@ from __future__ import print_function
 import argparse
 from carla.image_converter import to_rgb_array
 import logging
+import os
 import random
 import time
 import numpy as np
@@ -27,7 +28,7 @@ from carla.util import print_over_same_line
 
 def run_carla_client(args):
     # Here we will run 3 episodes with 300 frames each.
-    number_of_episodes = 50
+    number_of_episodes = 90
     frames_per_episode = 1000
 
     # We assume the CARLA server is already waiting for a client to connect at
@@ -128,6 +129,13 @@ def run_carla_client(args):
                 # Save the images to disk if requested.
                 if args.save_images_to_disk:
                     for name, measurement in sensor_data.items():
+                        # Create file path if it does not exist
+                        # Create the file path for the current episode if it does not exist
+                        sensor_file_path = args.out_path.format(episode, name)
+
+                        if not os.path.exists(sensor_file_path):
+                            os.makedirs(sensor_file_path)
+
                         # Crop hood from captured measurements
                         img = to_rgb_array(measurement)
                         img = img[0: 390, 0: 799]
@@ -242,6 +250,7 @@ def main():
 
     logging.info('listening to server %s:%s', args.host, args.port)
 
+    args.out_path = '_out/episode_{:0>4d}/{:s}'
     args.out_filename_format = '_out/episode_{:0>4d}/{:s}/{:0>4d}_{:0>6d}'
 
     while True:

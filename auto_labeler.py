@@ -68,21 +68,28 @@ for episode in episodes:
                     # x,y,w,h = cv2.boundingRect(cnt)
                     # cv2.rectangle(tag_mask,(x,y),(x+w,y+h),(255,255,255),1)
                     # cv2.imshow("Box", tag_mask)
-                    # cv2.waitKey(0)
+                    # cv2.waitKey(0) 
 
         num_imgs += 1
 
         if num_imgs % 100 == 0:
-            print("Processed {} images".format(num_imgs))
+            print("Labeled {} images".format(num_imgs))
 
-        # Create an output file in COCO format annotating the bounding box and class location for each object
-        json_file_path = os.path.join(os.getcwd(), "Objects", episode)
+        # Remove images with no object annotations
+        if len(data['objects']) == 0:
+            os.remove(img_path)
+            rgb_path = os.path.join(os.getcwd(), "_out", episode, "CameraRGB", path)
+            os.remove(rgb_path)
+            print("DELETED IMAGE WITH NO ANNOTATIONS!!!!!")
+        else:
+            # Create an output file in COCO format annotating the bounding box and class location for each object
+            json_file_path = os.path.join(os.getcwd(), "Objects", episode)
 
-        if not os.path.exists(json_file_path):
-            os.makedirs(json_file_path)
+            if not os.path.exists(json_file_path):
+                os.makedirs(json_file_path)
 
-        with open(os.path.join(json_file_path, path[:-4] + ".json"), 'w') as outfile:
-            json.dump(data, outfile)
+            with open(os.path.join(json_file_path, path[:-4] + ".json"), 'w') as outfile:
+                json.dump(data, outfile)
         
     imgs_labeled += num_imgs
     

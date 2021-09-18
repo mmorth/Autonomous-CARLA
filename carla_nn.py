@@ -23,7 +23,6 @@ TRAIN_TEST_SPLIT = 0.8
 IMAGE_DIR = "_out"
 GROUND_TRUTH_DIR = "GroundTruthRGB"
 LABEL_DIR = "Objects"
-FRAMES_PER_EPISODE = 1000
 
 CLASSES = {1: "Person", 2: "Bicycle", 3: "Vehicle", 4: "Motorbike", 6: "Bus", 7: "Train", 8: "Truck", 9: "Boat", 10: "Traffic LIght",
            12: "Street Sign", 13: "Stop Sign", 14: "Parking Meter", 17: "Cat", 18: "Dog", 19: "Horse", 20: "Sheep", 21: "Cow", 25: "Other"}
@@ -32,7 +31,7 @@ COLORS = np.random.uniform(0, 255, size=(25, 3))
 
 
 # Create Dataset: Converts labeled images into PyTorch label format
-# Source: https://pytorch.org/tutorials/intermediate/torchvision_tutorial.html#
+# Source (modified): https://pytorch.org/tutorials/intermediate/torchvision_tutorial.html#
 class CarlaVehicleDataset(torch.utils.data.Dataset):
 
     def __init__(self, root, transforms):
@@ -53,9 +52,10 @@ class CarlaVehicleDataset(torch.utils.data.Dataset):
     # stores the relevant information from image labeling
     def __getitem__(self, idx):
         # load images and masks
-        img_path = os.path.join(self.root, IMAGE_DIR, "episode_000" + str(int(idx/FRAMES_PER_EPISODE)), "CameraRGB", self.imgs[idx])
+        episode_num = self.imgs[idx][0:4]
+        img_path = os.path.join(self.root, IMAGE_DIR, "episode_" + episode_num, "CameraRGB", self.imgs[idx])
         img = Image.open(img_path).convert("RGB")
-        label_path = os.path.join(self.root, LABEL_DIR, "episode_000" + str(int(idx/FRAMES_PER_EPISODE)), self.labels[idx])
+        label_path = os.path.join(self.root, LABEL_DIR, "episode_" + episode_num, self.labels[idx])
         label_file = open(label_path,)
         label = json.load(label_file)
 
@@ -64,10 +64,10 @@ class CarlaVehicleDataset(torch.utils.data.Dataset):
         boxes = []
         labels = []
         for i in range(num_objs):
-            xmin = label['objects'][i]['x0']
-            xmax = label['objects'][i]['x1']
-            ymin = label['objects'][i]['y0']
-            ymax = label['objects'][i]['y1']
+            xmin = min(label['objects'][i]['x0'], label['objects'][i]['x1']-1)
+            xmax = max(label['objects'][i]['x1'], label['objects'][i]['x0']+1)
+            ymin = min(label['objects'][i]['y0'], label['objects'][i]['y1']-1)
+            ymax = max(label['objects'][i]['y1'], label['objects'][i]['y0']+1)
             boxes.append([xmin, ymin, xmax, ymax])
             labels.append(CARLA_TO_COCO_ID_CONVERSION[label['objects'][i]['label']])
 
@@ -125,7 +125,7 @@ def train_and_validate_nn():
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     # our dataset has two classes only - background and person
-    num_classes = 17
+    num_classes = 3
     # use our dataset and defined transformations
     dataset = CarlaVehicleDataset(os.getcwd(), get_transform(train=True))
     dataset_test = CarlaVehicleDataset(os.getcwd(), get_transform(train=False))
@@ -168,7 +168,7 @@ def train_and_validate_nn():
                                                    gamma=0.1)
 
     # let's train it for 10 epochs
-    num_epochs = 10
+    num_epochs = 50
 
     for epoch in range(num_epochs):
         # train for one epoch, printing every 10 iterations
@@ -177,6 +177,9 @@ def train_and_validate_nn():
         lr_scheduler.step()
         # evaluate on the test dataset
         evaluate(model, data_loader_test, device=device)
+
+        save_nn_model(model, epoch)
+
 
     print("Model Training Complete!")
     return model
