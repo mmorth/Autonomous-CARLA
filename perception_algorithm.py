@@ -95,8 +95,6 @@ def compute_plane(xyz):
 
     p = np.append(p, -d)
 
-    # Correct plane
-    # p = [0.0, 1.0, 0.0, -1.5]
     return p
 
 
@@ -116,6 +114,168 @@ def dist_to_plane(plane, x, y, z):
     a, b, c, d = plane
 
     return (a * x + b * y + c * z + d) / np.sqrt(a**2 + b**2 + c**2)
+
+
+def ransac_plane_fit(xyz_data):
+    """
+    Computes plane coefficients a,b,c,d of the plane in the form ax+by+cz+d = 0
+    using ransac for outlier rejection.
+
+    Arguments:
+    xyz_data -- tensor of dimension (3, N), contains all data points from which random sampling will proceed.
+    num_itr -- 
+    distance_threshold -- Distance threshold from plane for a point to be considered an inlier.
+
+    Returns:
+    p -- tensor of dimension (1, 4) containing the plane parameters a,b,c,d
+    """
+    
+    # Set thresholds:
+    num_itr = 100  # RANSAC maximum number of iterations
+    min_num_inliers = 300  # RANSAC minimum number of inliers
+    distance_threshold = 0.01  # Maximum distance from point to plane for point to be considered inlier
+    max_inliers = 0
+    max_inliers_indices = 0
+    
+    for i in range(num_itr):
+        # Step 1: Choose a minimum of 3 points from xyz_data at random.
+        chosen = np.random.choice(xyz_data.shape[1], 3, replace=False)
+        points = xyz_data[:, chosen]
+        
+        # Step 2: Compute plane model
+        plane_model = compute_plane(points)
+        
+        # Step 3: Find number of inliers
+        distance = dist_to_plane(plane_model, xyz_data[0, :].T, xyz_data[1, :].T, xyz_data[2, :].T)   
+        inliers = len(distance[distance > distance_threshold])
+        
+        # Step 4: Check if the current number of inliers is greater than all previous iterations and keep the inlier set with the largest number of points.
+        if inliers > max_inliers:
+            max_inliers = inliers
+            max_inliers_indices = np.where(distance < distance_threshold)[0]
+
+        # Step 5: Check if stopping criterion is satisfied and break.         
+        if inliers > min_num_inliers:
+            break
+        
+    # Step 6: Recompute the model parameters using largest inlier set.         
+    output_plane = compute_plane(xyz_data[:, max_inliers_indices])  
+    
+    return output_plane
+
+
+def estimate_lane_lines(segmentation_output):
+    """
+    Estimates lines belonging to lane boundaries. Multiple lines could correspond to a single lane.
+
+    Arguments:
+    segmentation_output -- tensor of dimension (H,W), containing semantic segmentation neural network output
+
+    Returns:
+    lines -- tensor of dimension (N, 4) containing lines in the form of [x_1, y_1, x_2, y_2], where [x_1,y_1] and [x_2,y_2] are
+    the coordinates of two points on the line in the (u,v) image coordinate frame.
+    """
+    # Step 1: Create an image with pixels belonging to lane boundary categories from the output of semantic segmentation
+    lane_boundary_mask = np.zeros(segmentation_output.shape).astype(np.uint8)
+    lane_boundary_mask[segmentation_output==6] = 255
+    lane_boundary_mask[segmentation_output==8] = 255
+
+    # Step 2: Perform Edge Detection using cv2.Canny()
+    lane_edges = cv2.Canny(lane_boundary_mask, 100, 150)
+
+    # Step 3: Perform Line estimation using cv2.HoughLinesP()
+    lanes = cv2.HoughLinesP(lane_edges, rho=10, theta=np.pi/180, threshold=200, minLineLength=150, maxLineGap=50)
+    
+    # Note: Make sure dimensions of returned lines is (N x 4)
+    lanes = lanes.reshape((-1, 4))
+
+    return lanes
+
+
+# Source: https://www.coursera.org/learn/visual-perception-self-driving-cars
+def get_slope_intecept(lines):
+    slopes = (lines[:, 3] - lines[:, 1]) / (lines[:, 2] - lines[:, 0] + 0.001)
+    intercepts = ((lines[:, 3] + lines[:, 1]) - slopes * (
+        lines[:, 2] + lines[:, 0])) / 2
+    return slopes, intercepts
+
+
+# Graded Function: merge_lane_lines
+def merge_lane_lines(lines):
+    """
+    Merges lane lines to output a single line per lane, using the slope and intercept as similarity measures.
+    Also, filters horizontal lane lines based on a minimum slope threshold.
+
+    Arguments:
+    lines -- tensor of dimension (N, 4) containing lines in the form of [x_1, y_1, x_2, y_2],
+    the coordinates of two points on the line.
+
+    Returns:
+    merged_lines -- tensor of dimension (N, 4) containing lines in the form of [x_1, y_1, x_2, y_2],
+    the coordinates of two points on the line.
+    """
+    # Step 0: Define thresholds
+    slope_similarity_threshold = 0.1
+    intercept_similarity_threshold = 40
+    min_slope_threshold = 0.3
+    clusters = []
+    current_inds = []
+    itr = 0
+    
+    # Step 1: Get slope and intercept of lines
+    slopes, intercepts = get_slope_intecept(lines)
+    
+    # Step 2: Determine lines with slope less than horizontal slope threshold.
+    slopes_horizontal = np.abs(slopes) > min_slope_threshold
+
+    # Step 3: Iterate over all remaining slopes and intercepts and cluster lines that are close to each other using a slope and intercept threshold.
+    for slope, intercept in zip(slopes, intercepts):
+        in_clusters = np.array([itr in current for current in current_inds])
+        if not in_clusters.any():
+            slope_cluster = np.logical_and(slopes < (slope+slope_similarity_threshold), slopes > (slope-slope_similarity_threshold))
+            intercept_cluster = np.logical_and(intercepts < (intercept+intercept_similarity_threshold), intercepts > (intercept-intercept_similarity_threshold))
+            inds = np.argwhere(slope_cluster & intercept_cluster & slopes_horizontal).T
+            if inds.size:
+                current_inds.append(inds.flatten())
+                clusters.append(lines[inds])
+        itr += 1
+        
+    # Step 4: Merge all lines in clusters using mean averaging
+    merged_lines = [np.mean(cluster, axis=1) for cluster in clusters]
+    
+    # Note: Make sure dimensions of returned lines is (N x 4)
+    merged_lines = np.array(merged_lines).reshape((-1, 4))
+
+    return merged_lines
+
+
+# Source: https://www.coursera.org/learn/visual-perception-self-driving-cars
+def extrapolate_lines(lines, y_min, y_max):
+    slopes, intercepts = get_slope_intecept(lines)
+
+    new_lines = []
+
+    for slope, intercept, in zip(slopes, intercepts):
+        x1 = (y_min - intercept) / slope
+        x2 = (y_max - intercept) / slope
+        new_lines.append([x1, y_min, x2, y_max])
+
+    return np.array(new_lines)
+
+
+# Source: https://www.coursera.org/learn/visual-perception-self-driving-cars
+def find_closest_lines(lines, point):
+    x0, y0 = point
+    distances = []
+    for line in lines:
+        x1, y1, x2, y2 = line
+        distances.append(((x2 - x1) * (y1 - y0) - (x1 - x0) *
+                          (y2 - y1)) / (np.sqrt((y2 - y1)**2 + (x2 - x1)**2)))
+
+    distances = np.abs(np.array(distances))
+    sorted = distances.argsort()
+
+    return lines[sorted[0:2], :]
 
 
 # Draws lane lines based on the semantic segmentation output
@@ -149,7 +309,41 @@ def draw_lane_lines_and_drivable_space(orig, depth_img, ss_img, fov):
     z_ground = depth_img[road_mask == 1]
     xyz_ground = np.stack((x_ground, y_ground, z_ground))
 
-    return lane_lines, drivable_space
+    # Estimate the ground plane (drivable space)
+    drivable_space = ransac_plane_fit(xyz_ground)
+
+    # Lane estimation
+    lane_lines = estimate_lane_lines(ss_img)
+
+    filtered_lane_lines = merge_lane_lines(lane_lines)
+
+    max_y = orig.shape[0]
+    min_y = np.min(np.argwhere(road_mask == 1)[:, 0])
+
+    extrapolated_lanes = extrapolate_lines(filtered_lane_lines, max_y, min_y)
+
+    # TODO: Determine how to compute the lane midpoint
+    final_lane_lines = find_closest_lines(extrapolated_lanes, np.array[800, 900])
+
+    # TODO: Draw the lane lines and show the drivable space image
+
+
+    return x, y, final_lane_lines, drivable_space
+
+
+# Computes the distance in meters from the detected objects
+def find_min_distance_to_detection(detection, x, y, z):
+    # Step 1: Compute distance of every pixel in the detection bounds
+    x_min, y_min, x_max, y_max = detection.astype("int")
+    box_x = x[y_min:y_max, x_min:x_max]
+    box_y = y[y_min:y_max, x_min:x_max]
+    box_z = z[y_min:y_max, x_min:x_max]
+    box_distances = np.sqrt(box_x**2 + box_y**2 + box_z**2)
+    
+    # Step 2: Find minimum distance
+    min_distance = np.min(box_distances)
+
+    return min_distance
 
 
 # Visualizes predictions
@@ -175,18 +369,14 @@ def visualize_predictions(orig, depth_img, ss_img, detections, fov):
                 idx = 25
             box = detections["boxes"][i].detach().cpu().numpy()
             (startX, startY, endX, endY) = box.astype("int")
-            
-            # compute depth information from the depth map
             label = "{}: {:.2f}%".format(CLASSES[idx], confidence * 100)
-            width = endX - startX
-            height = endY - startY
-            slice = depth_img[startY + int(height/4): endY - int(height/4), startX + int(width/4): endX - int(width/4)]
-            depth = np.average(slice)
-            distance = 1000 * depth
-            label_distance = "{}m".format(distance)
 
             # use semantic segmentation image to display the lane lines and drivable space
-            lane_lines, drivable_space = draw_lane_lines_and_drivable_space(orig, depth_img, ss_img, fov)
+            x_world, y_world, lane_lines, drivable_space = draw_lane_lines_and_drivable_space(orig, depth_img, ss_img, fov)
+
+            # compute distance to the detected objects
+            distance = find_min_distance_to_detection(box, x_world, y_world, depth_img)
+            label_distance = "{}m".format(distance)
 
             # display the prediction to our terminal
             print("[INFO] {}".format(label))
