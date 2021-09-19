@@ -16,6 +16,7 @@ import cv2
 from numpy.testing._private.utils import measure
 import keyboard
 import logging
+import math
 import os
 import random
 import time
@@ -75,9 +76,85 @@ def get_keyboard_control():
     return control
 
 
+# Source: https://www.coursera.org/learn/visual-perception-self-driving-cars
+def compute_plane(xyz):
+    """
+    Computes plane coefficients a,b,c,d of the plane in the form ax+by+cz+d = 0
+    Arguments:
+    xyz -- tensor of dimension (3, N), contains points needed to fit plane.
+    k -- tensor of dimension (3x3), the intrinsic camera matrix
+    Returns:
+    p -- tensor of dimension (1, 4) containing the plane parameters a,b,c,d
+    """
+    ctr = xyz.mean(axis=1)
+    normalized = xyz - ctr[:, np.newaxis]
+    M = np.dot(normalized, normalized.T)
+
+    p = np.linalg.svd(M)[0][:, -1]
+    d = np.matmul(p, ctr)
+
+    p = np.append(p, -d)
+
+    # Correct plane
+    # p = [0.0, 1.0, 0.0, -1.5]
+    return p
+
+
+# Source: https://www.coursera.org/learn/visual-perception-self-driving-cars
+def dist_to_plane(plane, x, y, z):
+    """
+    Computes distance between points provided by their x, and y, z coordinates
+    and a plane in the form ax+by+cz+d = 0
+    Arguments:
+    plane -- tensor of dimension (4,1), containing the plane parameters [a,b,c,d]
+    x -- tensor of dimension (Nx1), containing the x coordinates of the points
+    y -- tensor of dimension (Nx1), containing the y coordinates of the points
+    z -- tensor of dimension (Nx1), containing the z coordinates of the points
+    Returns:
+    distance -- tensor of dimension (N, 1) containing the distance between points and the plane
+    """
+    a, b, c, d = plane
+
+    return (a * x + b * y + c * z + d) / np.sqrt(a**2 + b**2 + c**2)
+
+
+# Draws lane lines based on the semantic segmentation output
+def draw_lane_lines_and_drivable_space(orig, depth_img, ss_img, fov):
+    # TODO: Optimize the x, y, z computation for real-time running
+    # Source: https://github.com/carla-simulator/carla/issues/56
+
+    # Compute the camera intrinsic calibration matric
+    img_height, img_width = np.shape(img)
+    f = img_width / (2 * math.tan(fov * math.pi / 360))
+    cu = img_width / 2
+    cv = img_height / 2
+
+    z = depth_img
+    x = np.zeros((img_height, img_width))
+    y = np.zeros((img_height, img_width))
+
+    # Convert from the (x y) pixel coordinates to the (x, y, z) world coordinates
+    for i in range(img_height):
+        for j in range(img_width):
+            x[i, j] = ((j+1 - cu)*z[i, j]) / f
+            y[i, j] = ((i+1 - cv)*z[i, j]) / f
+
+    # Get road mask by choosing pixels in segmentation output with value 7
+    road_mask = np.zeros(ss_img.shape)
+    road_mask[ss_img == 7] = 1
+
+    # Get x,y, and z coordinates of pixels in road mask
+    x_ground = x[road_mask == 1]
+    y_ground = y[road_mask == 1]
+    z_ground = depth_img[road_mask == 1]
+    xyz_ground = np.stack((x_ground, y_ground, z_ground))
+
+    return lane_lines, drivable_space
+
+
 # Visualizes predictions
 # Source: https://www.pyimagesearch.com/2021/08/02/pytorch-object-detection-with-pre-trained-networks/
-def visualize_predictions(orig, depth_img, detections):
+def visualize_predictions(orig, depth_img, ss_img, detections, fov):
     global MIN_CONFIDENCE
     global CLASSES
     global COLORS
@@ -101,10 +178,15 @@ def visualize_predictions(orig, depth_img, detections):
             
             # compute depth information from the depth map
             label = "{}: {:.2f}%".format(CLASSES[idx], confidence * 100)
-            slice = depth_img[startY: endY, startX: endX]
+            width = endX - startX
+            height = endY - startY
+            slice = depth_img[startY + int(height/4): endY - int(height/4), startX + int(width/4): endX - int(width/4)]
             depth = np.average(slice)
             distance = 1000 * depth
             label_distance = "{}m".format(distance)
+
+            # use semantic segmentation image to display the lane lines and drivable space
+            lane_lines, drivable_space = draw_lane_lines_and_drivable_space(orig, depth_img, ss_img, fov)
 
             # display the prediction to our terminal
             print("[INFO] {}".format(label))
@@ -130,6 +212,8 @@ def run_carla_client(args):
     # context manager, it creates a CARLA client object and starts the
     # connection. It will throw an exception if something goes wrong. The
     # context manager makes sure the connection is always cleaned up on exit.
+    camera_fov = 0
+
     with make_carla_client(args.host, args.port) as client:
         print('CarlaClient connected')
         
@@ -166,6 +250,7 @@ def run_carla_client(args):
             camera0.set_image_size(800, 600)
             # Set its position relative to the car in meters.
             camera0.set_position(0.30, 0, 1.30)
+            camera_fov = camera0.FOV
             settings.add_sensor(camera0)
 
             # Let's add another camera producing ground-truth depth.
@@ -180,19 +265,6 @@ def run_carla_client(args):
             # Set its position relative to the car in meters.
             camera2.set_position(0.30, 0, 1.30)
             settings.add_sensor(camera2)
-
-            if args.lidar:
-                lidar = Lidar('Lidar32')
-                lidar.set_position(0, 0, 2.50)
-                lidar.set_rotation(0, 0, 0)
-                lidar.set(
-                    Channels=32,
-                    Range=50,
-                    PointsPerSecond=100000,
-                    RotationFrequency=10,
-                    UpperFovLimit=10,
-                    LowerFovLimit=-30)
-                settings.add_sensor(lidar)
 
         else:
 
@@ -219,6 +291,7 @@ def run_carla_client(args):
         # Iterate every frame in the simulation
         frame = 0
         depth_img = np.zeros((800, 600, 1), dtype = "uint8")
+        ss_img = np.zeros((800, 600, 1), dtype = "uint8")
         while True:
             frame += 1
 
@@ -242,16 +315,13 @@ def run_carla_client(args):
                     img = input.unsqueeze_(0)
                     model.eval()
                     pred = model(input.cuda())[0]
-                    visualize_predictions(orig, depth_img, pred)
+                    visualize_predictions(orig, depth_img, ss_img, pred, camera_fov)
                 elif name == 'CameraDepth':
-                    # Obtain and display the depth image
+                    # Obtain and save the depth measurements for distance visualization
                     depth_img = depth_to_array(measurement)
-
-                    # TODO: Compute the object's depth
-                    # in_meters = 1000 * depth_img[x,y]
-
-                    cv2.imshow("CameraDepth", depth_img)
-                    cv2.waitKey(1)
+                elif name == 'CameraSemanticSegmentation':
+                    # Obtain and save the semantic segmentation measurements for lane visualization
+                    ss_img = to_bgra_array(measurement)
 
             # Send the position to the client
             control = get_keyboard_control()
