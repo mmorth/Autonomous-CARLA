@@ -18,7 +18,7 @@ from torchvision.models.detection.ssd import SSDFeatureExtractorVGG
 
 
 # Global variables used for printing results
-MIN_CONFIDENCE = 0.8
+MIN_CONFIDENCE = 0.5
 TRAIN_TEST_SPLIT = 0.8
 IMAGE_DIR = "_out"
 GROUND_TRUTH_DIR = "GroundTruthRGB"
@@ -35,6 +35,7 @@ COLORS = np.random.uniform(0, 255, size=(25, 3))
 class CarlaVehicleDataset(torch.utils.data.Dataset):
 
     def __init__(self, root, transforms):
+        print("Creating and pre-processing the dataset...")
         self.root = root
         # store the data pre-processing transform
         self.transforms = transforms
@@ -47,6 +48,41 @@ class CarlaVehicleDataset(torch.utils.data.Dataset):
         self.labels = []
         for episode in episodes:
             self.labels.extend(sorted(os.listdir(os.path.join(root, LABEL_DIR, episode))))
+
+        # # Pre-process filter invalid boxes
+        # self.imgs = []
+        # self.labels = []
+        # for idx in range(len(imgs)):
+        #     episode_num = imgs[idx][0:4]
+        #     label_path = os.path.join(self.root, LABEL_DIR, "episode_" + episode_num, labels[idx])
+        #     label_file = open(label_path,)
+        #     label = json.load(label_file)
+
+        #     # Only add annotations with valid bounding boxes
+        #     num_objs = len(label['objects'])
+        #     all_boxes_valid = True
+        #     for i in range(num_objs):
+        #         # print("=========================================")
+        #         # print("x0 = {}".format(label['objects'][i]['x0']))
+        #         # print("x1 = {}".format(label['objects'][i]['x1']))
+        #         # print("y0 = {}".format(label['objects'][i]['y0']))
+        #         # print("y1 = {}".format(label['objects'][i]['y1']))
+        #         # print("=========================================")
+        #         if label['objects'][i]['x0'] >= label['objects'][i]['x1'] \
+        #             or label['objects'][i]['y0'] >= label['objects'][i]['y1'] \
+        #             or label['objects'][i]['x0'] < 0 \
+        #             or label['objects'][i]['x1']-1 >= 799 \
+        #             or label['objects'][i]['y0'] < 0 \
+        #             or label['objects'][i]['y1']-1 >= 390:
+        #             all_boxes_valid = False
+        #             # print("INVALID BOXES DETECTED!!!!!")
+            
+        #     if all_boxes_valid:
+        #         self.imgs.append(imgs[idx])
+        #         self.labels.append(labels[idx])
+
+        #     if idx % 1000 == 0:
+        #         print("Pre-processed {} images".format(idx))
 
 
     # stores the relevant information from image labeling
@@ -64,10 +100,10 @@ class CarlaVehicleDataset(torch.utils.data.Dataset):
         boxes = []
         labels = []
         for i in range(num_objs):
-            xmin = min(label['objects'][i]['x0'], label['objects'][i]['x1']-1)
-            xmax = max(label['objects'][i]['x1'], label['objects'][i]['x0']+1)
-            ymin = min(label['objects'][i]['y0'], label['objects'][i]['y1']-1)
-            ymax = max(label['objects'][i]['y1'], label['objects'][i]['y0']+1)
+            xmin = label['objects'][i]['x0']
+            xmax = label['objects'][i]['x1']-1
+            ymin = label['objects'][i]['y0']
+            ymax = label['objects'][i]['y1']-1
             boxes.append([xmin, ymin, xmax, ymax])
             labels.append(CARLA_TO_COCO_ID_CONVERSION[label['objects'][i]['label']])
 
@@ -120,7 +156,7 @@ def get_transform(train):
 
 
 # Train and Validate the NN
-def train_and_validate_nn():
+def train_and_validate_nn(model=None):
     # train on the GPU or on the CPU, if a GPU is not available
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 
@@ -153,14 +189,15 @@ def train_and_validate_nn():
         collate_fn=utils.collate_fn)
 
     # get the model using our helper function
-    model = get_model_instance_segmentation()
+    if model == None:
+        model = get_model_instance_segmentation()
 
     # move model to the right device
     model.to(device)
 
     # construct an optimizer
     params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.SGD(params, lr=0.005,
+    optimizer = torch.optim.SGD(params, lr=0.0001,
                                 momentum=0.9, weight_decay=0.0005)
     # and a learning rate scheduler
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
@@ -178,6 +215,7 @@ def train_and_validate_nn():
         # evaluate on the test dataset
         evaluate(model, data_loader_test, device=device)
 
+        print("Saving model as model{}.pt...".format(epoch))
         save_nn_model(model, epoch)
 
 
@@ -259,13 +297,14 @@ def predict_ground_truth_results(model):
 # Main Method
 def main():
     # Train and save model on new data
-    model = train_and_validate_nn()
-    save_nn_model(model, 1)
+    # model = load_nn_model(0)
+    # model = train_and_validate_nn()
+    # save_nn_model(model, 1)
 
     # # Load model and predict (use pre-trained OR loaded model)
     # model = get_model_instance_segmentation()
-    # model = load_nn_model(0)
-    # predict_ground_truth_results(model)
+    model = load_nn_model(10)
+    predict_ground_truth_results(model)
 
 
 if __name__ == "__main__":
