@@ -49,6 +49,10 @@ LABEL_DIR = "Objects"
 FRAMES_PER_EPISODE = 1000
 
 
+
+
+
+
 # Receives the keyboard inputs from the user
 def get_keyboard_control():
     """
@@ -74,6 +78,24 @@ def get_keyboard_control():
         enable_autopilot = not enable_autopilot
     control.reverse = reverse_on
     return control
+
+
+def xy_from_depth(depth, fov):
+    # Compute the camera intrinsic calibration matric   
+    img_height, img_width = depth.shape
+    
+    z = depth[:,:,]
+    f = img_width / (2 * math.tan(fov * math.pi / 360))
+    cu = img_width / 2
+    cv = img_height / 2
+
+    u, v = np.meshgrid(np.arange(1, img_width + 1, 1), np.arange(1, img_height + 1, 1))
+
+    # Compute the x, y world coordinates
+    x = ((u - cu) * z) / f
+    y = ((v - cv) * z) / f
+
+    return x, y
 
 
 # Source: https://www.coursera.org/learn/visual-perception-self-driving-cars
@@ -132,34 +154,39 @@ def ransac_plane_fit(xyz_data):
     
     # Set thresholds:
     num_itr = 100  # RANSAC maximum number of iterations
-    min_num_inliers = 300  # RANSAC minimum number of inliers
-    distance_threshold = 0.01  # Maximum distance from point to plane for point to be considered inlier
+    min_num_inliers = 45000  # RANSAC minimum number of inliers
+    distance_threshold = 0.1  # Maximum distance from point to plane for point to be considered inlier
     max_inliers = 0
-    max_inliers_indices = 0
+    inlier_set = 0
+
+    data_size = xyz_data.shape[1]
+
+    x = xyz_data[0, :]
+    y = xyz_data[1, :]
+    z = xyz_data[2, :]
     
     for i in range(num_itr):
         # Step 1: Choose a minimum of 3 points from xyz_data at random.
-        chosen = np.random.choice(xyz_data.shape[1], 3, replace=False)
-        points = xyz_data[:, chosen]
+        points = np.random.choice(data_size, 3, replace=False)
         
         # Step 2: Compute plane model
-        plane_model = compute_plane(points)
+        plane_model = compute_plane(xyz_data[:, points])
         
         # Step 3: Find number of inliers
-        distance = dist_to_plane(plane_model, xyz_data[0, :].T, xyz_data[1, :].T, xyz_data[2, :].T)   
-        inliers = len(distance[distance > distance_threshold])
+        distance = np.abs(dist_to_plane(plane_model, x, y, z))
+        num_inliers = np.sum(distance < distance_threshold)
         
         # Step 4: Check if the current number of inliers is greater than all previous iterations and keep the inlier set with the largest number of points.
-        if inliers > max_inliers:
-            max_inliers = inliers
-            max_inliers_indices = np.where(distance < distance_threshold)[0]
+        if num_inliers >= max_inliers:
+            max_inliers = num_inliers
+            inlier_set = xyz_data[:, distance < distance_threshold]
 
         # Step 5: Check if stopping criterion is satisfied and break.         
-        if inliers > min_num_inliers:
+        if num_inliers > min_num_inliers:
             break
         
     # Step 6: Recompute the model parameters using largest inlier set.         
-    output_plane = compute_plane(xyz_data[:, max_inliers_indices])  
+    output_plane = compute_plane(inlier_set)  
     
     return output_plane
 
@@ -176,15 +203,16 @@ def estimate_lane_lines(segmentation_output):
     the coordinates of two points on the line in the (u,v) image coordinate frame.
     """
     # Step 1: Create an image with pixels belonging to lane boundary categories from the output of semantic segmentation
-    lane_boundary_mask = np.zeros(segmentation_output.shape).astype(np.uint8)
+    lane_boundary_mask = np.zeros(segmentation_output.shape)
     lane_boundary_mask[segmentation_output==6] = 255
     lane_boundary_mask[segmentation_output==8] = 255
 
     # Step 2: Perform Edge Detection using cv2.Canny()
-    lane_edges = cv2.Canny(lane_boundary_mask, 100, 150)
+    lane_boundary_mask = cv2.GaussianBlur(lane_boundary_mask, (5,5), 1)
+    lane_edges = cv2.Canny(lane_boundary_mask.astype(np.uint8),  100, 110)
 
     # Step 3: Perform Line estimation using cv2.HoughLinesP()
-    lanes = cv2.HoughLinesP(lane_edges, rho=10, theta=np.pi/180, threshold=200, minLineLength=150, maxLineGap=50)
+    lanes = cv2.HoughLinesP(lane_edges, rho=1, theta=np.pi/180, threshold=100, minLineLength=100, maxLineGap=25)
     
     # Note: Make sure dimensions of returned lines is (N x 4)
     lanes = lanes.reshape((-1, 4))
@@ -280,28 +308,13 @@ def find_closest_lines(lines, point):
 
 # Draws lane lines based on the semantic segmentation output
 def draw_lane_lines_and_drivable_space(orig, depth_img, ss_img, fov):
-    # TODO: Optimize the x, y, z computation for real-time running
-    # Source: https://github.com/carla-simulator/carla/issues/56
-
-    # Compute the camera intrinsic calibration matric
-    img_height, img_width = np.shape(img)
-    f = img_width / (2 * math.tan(fov * math.pi / 360))
-    cu = img_width / 2
-    cv = img_height / 2
-
-    z = depth_img
-    x = np.zeros((img_height, img_width))
-    y = np.zeros((img_height, img_width))
-
-    # Convert from the (x y) pixel coordinates to the (x, y, z) world coordinates
-    for i in range(img_height):
-        for j in range(img_width):
-            x[i, j] = ((j+1 - cu)*z[i, j]) / f
-            y[i, j] = ((i+1 - cv)*z[i, j]) / f
+    # Compute the x, y, z world coordinate for each pixel value
+    x, y = xy_from_depth(depth_img, fov)
 
     # Get road mask by choosing pixels in segmentation output with value 7
-    road_mask = np.zeros(ss_img.shape)
-    road_mask[ss_img == 7] = 1
+    segmentation = ss_img[:,:,2]
+    road_mask = np.zeros(segmentation.shape)
+    road_mask[segmentation == 7] = 1
 
     # Get x,y, and z coordinates of pixels in road mask
     x_ground = x[road_mask == 1]
@@ -310,7 +323,14 @@ def draw_lane_lines_and_drivable_space(orig, depth_img, ss_img, fov):
     xyz_ground = np.stack((x_ground, y_ground, z_ground))
 
     # Estimate the ground plane (drivable space)
-    drivable_space = ransac_plane_fit(xyz_ground)
+    ground_plane = ransac_plane_fit(xyz_ground)
+
+    dist = np.abs(dist_to_plane(ground_plane, x, y, depth_img))
+
+    ground_mask = np.zeros(dist.shape)
+
+    ground_mask[dist < 0.1] = 1
+    ground_mask[dist > 0.1] = 0
 
     # Lane estimation
     lane_lines = estimate_lane_lines(ss_img)
@@ -320,15 +340,11 @@ def draw_lane_lines_and_drivable_space(orig, depth_img, ss_img, fov):
     max_y = orig.shape[0]
     min_y = np.min(np.argwhere(road_mask == 1)[:, 0])
 
+    # TODO: Filter lane line detection results to perform better when close to the edge
     extrapolated_lanes = extrapolate_lines(filtered_lane_lines, max_y, min_y)
+    final_lane_lines = find_closest_lines(extrapolated_lanes, np.array([400, 390]))
 
-    # TODO: Determine how to compute the lane midpoint
-    final_lane_lines = find_closest_lines(extrapolated_lanes, np.array[800, 900])
-
-    # TODO: Draw the lane lines and show the drivable space image
-
-
-    return x, y, final_lane_lines, drivable_space
+    return x, y, final_lane_lines, road_mask
 
 
 # Computes the distance in meters from the detected objects
@@ -346,9 +362,24 @@ def find_min_distance_to_detection(detection, x, y, z):
     return min_distance
 
 
+# Source: https://www.coursera.org/learn/visual-perception-self-driving-cars
+def draw_lanes(image_out, lane_lines):
+    for line in lane_lines:
+        x1, y1, x2, y2 = line.astype(int)
+
+        image_out = cv2.line(
+            image_out.astype(
+                np.uint8), (x1, y1), (x2, y2), (255, 0, 255), 7)
+
+    return image_out
+
+
 # Visualizes predictions
 # Source: https://www.pyimagesearch.com/2021/08/02/pytorch-object-detection-with-pre-trained-networks/
 def visualize_predictions(orig, depth_img, ss_img, detections, fov):
+    # Detect and draw lane lines on the image
+    x_world, y_world, lane_lines, drivable_space = draw_lane_lines_and_drivable_space(orig, depth_img, ss_img, fov)
+
     global MIN_CONFIDENCE
     global CLASSES
     global COLORS
@@ -370,13 +401,10 @@ def visualize_predictions(orig, depth_img, ss_img, detections, fov):
             box = detections["boxes"][i].detach().cpu().numpy()
             (startX, startY, endX, endY) = box.astype("int")
             label = "{}: {:.2f}%".format(CLASSES[idx], confidence * 100)
-
-            # use semantic segmentation image to display the lane lines and drivable space
-            x_world, y_world, lane_lines, drivable_space = draw_lane_lines_and_drivable_space(orig, depth_img, ss_img, fov)
-
+            
             # compute distance to the detected objects
-            distance = find_min_distance_to_detection(box, x_world, y_world, depth_img)
-            label_distance = "{}m".format(distance)
+            distance = 1000 * find_min_distance_to_detection(box, x_world, y_world, depth_img)
+            label_distance = "{:.2f}m".format(distance)
 
             # display the prediction to our terminal
             print("[INFO] {}".format(label))
@@ -390,6 +418,11 @@ def visualize_predictions(orig, depth_img, ss_img, detections, fov):
             cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx-1], 2)
             cv2.putText(orig, label_distance, (startX, yd),
             cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx-1], 2)
+
+    orig = draw_lanes(orig, lane_lines)
+
+    # show the drivable space output
+    cv2.imshow("Drivable", drivable_space)
 
     # show the output image
     cv2.imshow("CameraRGB", orig)
@@ -480,8 +513,10 @@ def run_carla_client(args):
 
         # Iterate every frame in the simulation
         frame = 0
-        depth_img = np.zeros((800, 600, 1), dtype = "uint8")
-        ss_img = np.zeros((800, 600, 1), dtype = "uint8")
+        depth_img = None
+        ss_img = None
+        cur_img = None
+        prev_img = None
         while True:
             frame += 1
 
@@ -497,15 +532,19 @@ def run_carla_client(args):
                 if name == 'CameraRGB':
                     # Obtain and detect objects on the RGB image
                     img = to_bgra_array(measurement)
-                    orig = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+                    cur_img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
                     # TODO: detect object locations using trained model
                     transform = T.ToTensor()
-                    input = transform(orig)[0]
+                    input = transform(cur_img)[0]
                     img = input.unsqueeze_(0)
                     model.eval()
                     pred = model(input.cuda())[0]
-                    visualize_predictions(orig, depth_img, ss_img, pred, camera_fov)
+                    if depth_img is not None and ss_img is not None:
+                        depth_img = depth_img.reshape(depth_img.shape[0], depth_img.shape[1])
+                        visualize_predictions(cur_img, depth_img, ss_img, pred, camera_fov)
+
+                    prev_img = cur_img
                 elif name == 'CameraDepth':
                     # Obtain and save the depth measurements for distance visualization
                     depth_img = depth_to_array(measurement)
@@ -615,3 +654,8 @@ if __name__ == '__main__':
         main()
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')
+
+
+
+
+
