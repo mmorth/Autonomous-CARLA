@@ -55,10 +55,6 @@ FRAMES_PER_EPISODE = 1000
 
 # Receives the keyboard inputs from the user
 def get_keyboard_control():
-    """
-    Return a VehicleControl message based on the pressed keys. Return None
-    if a new episode was requested.
-    """
     control = VehicleControl()
     if keyboard.is_pressed('a'):
         control.steer = -1.0
@@ -68,8 +64,6 @@ def get_keyboard_control():
         control.throttle = 1.0
     if keyboard.is_pressed('s'):
         control.brake = 1.0
-    # if keys[K_SPACE]:
-    #     control.hand_brake = True
     if keyboard.is_pressed('q'):
         global reverse_on
         reverse_on = not reverse_on
@@ -100,14 +94,7 @@ def xy_from_depth(depth, fov):
 
 # Source: https://www.coursera.org/learn/visual-perception-self-driving-cars
 def compute_plane(xyz):
-    """
-    Computes plane coefficients a,b,c,d of the plane in the form ax+by+cz+d = 0
-    Arguments:
-    xyz -- tensor of dimension (3, N), contains points needed to fit plane.
-    k -- tensor of dimension (3x3), the intrinsic camera matrix
-    Returns:
-    p -- tensor of dimension (1, 4) containing the plane parameters a,b,c,d
-    """
+    # Computes plane coefficients a,b,c,d of the plane in the form ax+by+cz+d = 0
     ctr = xyz.mean(axis=1)
     normalized = xyz - ctr[:, np.newaxis]
     M = np.dot(normalized, normalized.T)
@@ -122,35 +109,14 @@ def compute_plane(xyz):
 
 # Source: https://www.coursera.org/learn/visual-perception-self-driving-cars
 def dist_to_plane(plane, x, y, z):
-    """
-    Computes distance between points provided by their x, and y, z coordinates
-    and a plane in the form ax+by+cz+d = 0
-    Arguments:
-    plane -- tensor of dimension (4,1), containing the plane parameters [a,b,c,d]
-    x -- tensor of dimension (Nx1), containing the x coordinates of the points
-    y -- tensor of dimension (Nx1), containing the y coordinates of the points
-    z -- tensor of dimension (Nx1), containing the z coordinates of the points
-    Returns:
-    distance -- tensor of dimension (N, 1) containing the distance between points and the plane
-    """
+    # Computes distance between points provided by their x, and y, z coordinates and a plane in the form ax+by+cz+d = 0
     a, b, c, d = plane
 
     return (a * x + b * y + c * z + d) / np.sqrt(a**2 + b**2 + c**2)
 
 
 def ransac_plane_fit(xyz_data):
-    """
-    Computes plane coefficients a,b,c,d of the plane in the form ax+by+cz+d = 0
-    using ransac for outlier rejection.
-
-    Arguments:
-    xyz_data -- tensor of dimension (3, N), contains all data points from which random sampling will proceed.
-    num_itr -- 
-    distance_threshold -- Distance threshold from plane for a point to be considered an inlier.
-
-    Returns:
-    p -- tensor of dimension (1, 4) containing the plane parameters a,b,c,d
-    """
+    # Computes plane coefficients a,b,c,d of the plane in the form ax+by+cz+d = 0 using ransac for outlier rejection.
     
     # Set thresholds:
     num_itr = 100  # RANSAC maximum number of iterations
@@ -192,16 +158,7 @@ def ransac_plane_fit(xyz_data):
 
 
 def estimate_lane_lines(segmentation_output):
-    """
-    Estimates lines belonging to lane boundaries. Multiple lines could correspond to a single lane.
-
-    Arguments:
-    segmentation_output -- tensor of dimension (H,W), containing semantic segmentation neural network output
-
-    Returns:
-    lines -- tensor of dimension (N, 4) containing lines in the form of [x_1, y_1, x_2, y_2], where [x_1,y_1] and [x_2,y_2] are
-    the coordinates of two points on the line in the (u,v) image coordinate frame.
-    """
+    # Estimates lines belonging to lane boundaries. Multiple lines could correspond to a single lane.
     # Step 1: Create an image with pixels belonging to lane boundary categories from the output of semantic segmentation
     lane_boundary_mask = np.zeros(segmentation_output.shape)
     lane_boundary_mask[segmentation_output==6] = 255
@@ -230,18 +187,7 @@ def get_slope_intecept(lines):
 
 # Graded Function: merge_lane_lines
 def merge_lane_lines(lines):
-    """
-    Merges lane lines to output a single line per lane, using the slope and intercept as similarity measures.
-    Also, filters horizontal lane lines based on a minimum slope threshold.
-
-    Arguments:
-    lines -- tensor of dimension (N, 4) containing lines in the form of [x_1, y_1, x_2, y_2],
-    the coordinates of two points on the line.
-
-    Returns:
-    merged_lines -- tensor of dimension (N, 4) containing lines in the form of [x_1, y_1, x_2, y_2],
-    the coordinates of two points on the line.
-    """
+    # Merges lane lines to output a single line per lane, using the slope and intercept as similarity measures. Also, filters horizontal lane lines based on a minimum slope threshold.
     # Step 0: Define thresholds
     slope_similarity_threshold = 0.1
     intercept_similarity_threshold = 40
@@ -526,7 +472,6 @@ def run_carla_client(args):
             # Print some of the measurements.
             print_measurements(measurements)
 
-            # TODO: View the captured images in real-time
             # Save the images to disk if requested.
             for name, measurement in sensor_data.items():
                 if name == 'CameraRGB':
@@ -654,8 +599,3 @@ if __name__ == '__main__':
         main()
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')
-
-
-
-
-
