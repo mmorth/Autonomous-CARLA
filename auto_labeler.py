@@ -4,6 +4,16 @@ import json
 import os
 import numpy as np
 
+'''
+This Python script automatically labels vehicles, pedestrains, and traffic signs using the following algorithm:
+1. Threshold the semantic segmentation image into images containing just a single class
+    a. All class pixels are set to 255 while all non-class pixels are set to 0
+2. Perform contour detection on each object from the thresholded class image
+3. For each detected contour:
+    a. Find and store the bounding box coordinates of the contour if it's area is sufficiently large
+This process will label every object with its location (using contour analysis) and class (from the semantic segmentation image).
+Images should be stored in a directory named _out/episode_#####
+'''
 
 # Constants and global variables
 CLASSES = [4, 10, 12] # Classes according to CARLA's semantic segmentation sensor: https://carla.readthedocs.io/en/stable/cameras_and_sensors/
@@ -14,48 +24,29 @@ imgs_labeled = 0
 for episode in episodes:
     print("Processing {}...".format(episode))
 
-    # Locate the sematic segmentated images in the filesystem
+    # Locate and crete a list of the sematic segmentated images in the filesystem
     imgs = list(sorted(os.listdir(os.path.join(os.getcwd(), "_out", episode, "CameraSemanticSegmentation"))))
     num_imgs = 0
     for path in imgs:
-        # Read and convert image to grayscale
+        # Read and store image
         img_path = os.path.join(os.getcwd(), "_out", episode, "CameraSemanticSegmentation", path)
         img = cv2.imread(img_path)
 
-        # Create variable to store JSON data
+        # Create variable to store JSON data (class label and object location)
         data = {}
         data['objects'] = []
 
-        # Process each desired clss (1=buildings, 4=pedestrains, 6=road lines, 10=vehicles, 12=traffic signs)
+        # Process each desired clss (4=pedestrains, 10=vehicles, 12=traffic signs)
         for tag in CLASSES:
             # Bitwise mask to isolate only the current tag in the image
             lower_tag_range = np.array([0,0,tag], dtype = "uint16")
             upper_tag_range = np.array([0,0,tag], dtype = "uint16")
             tag_mask = cv2.inRange(img, lower_tag_range, upper_tag_range)
 
-            # TODO: Determine whether to save the masks as well for training a masked CNN
-
-            # TODO: Determine whether to include these morphological operations in the pre-processing
-            # se = cv2.getStructuringElement(cv2.MORPH_RECT,(3,3))
-            # closing = cv2.morphologyEx(tag_mask, cv2.MORPH_CLOSE, se)
-
-            # cv2.imshow("Closing", closing)
-            # cv2.waitKey(0)
-
             # Use OpenCV to find the bounding box location of the object
             contours, hierarchy = cv2.findContours(tag_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
             for cnt in contours:
-                # Handle overlapping classes (e.g. 2 vehicles with overlapping ROIs that make it look like 1 ROI) (could manually label in this case)
-                    # This would be an issue since both would be in the same class, so you can classify the entire blob as one class even if they are separate objects
-                    # The only area this may be an issue is when doing visual odometry or object tracking, but you could use the previous motion model to track its position
-                # TODO: Handle situations when there is a gap (e.g. between arm and body) that creates a separate detection (maybe require certain area for detection?)
-                    # This could be handled by using morphological operations to remove or reduce these, but you would need to be careful not to join two separate objects as a result
-                    # This could also be handled by having a minimum area requirement for the detected object annotation
-                    # Additionally, storing all detected boxes and using Non-Maximum Suppression to remove duplicate detections could work
-                # TODO: Remove duplicate detections for the same object or when one object gets detected as two (for split masks) (maybe morphological operations?)
-                    # This could be resolved by the area requirement as this would only likely occur for objects far away.
-                    # Additionally, morphological operations could be done to reduce these affects
+                # Ensure minimum contour area and maximum contour area (to not detect front of vehicle)
                 if cv2.contourArea(cnt) > 200 and cv2.contourArea(cnt) < 100000:
                     x,y,w,h = cv2.boundingRect(cnt)
                     data['objects'].append({
@@ -65,13 +56,10 @@ for episode in episodes:
                         "x1": x+w,
                         "y1": y+h
                     })
-                    # x,y,w,h = cv2.boundingRect(cnt)
-                    # cv2.rectangle(tag_mask,(x,y),(x+w,y+h),(255,255,255),1)
-                    # cv2.imshow("Box", tag_mask)
-                    # cv2.waitKey(0) 
 
         num_imgs += 1
 
+        # Debugging progress
         if num_imgs % 100 == 0:
             print("Labeled {} images".format(num_imgs))
 
@@ -80,9 +68,9 @@ for episode in episodes:
             os.remove(img_path)
             rgb_path = os.path.join(os.getcwd(), "_out", episode, "CameraRGB", path)
             os.remove(rgb_path)
-            print("DELETED IMAGE WITH NO ANNOTATIONS!!!!!")
+            print("[NOTE]: Deleted image " + str(path) + " with no labels")
         else:
-            # Create an output file in COCO format annotating the bounding box and class location for each object
+            # Create an output file in COCO format annotating the bounding box and class label for each object
             json_file_path = os.path.join(os.getcwd(), "Objects", episode)
 
             if not os.path.exists(json_file_path):

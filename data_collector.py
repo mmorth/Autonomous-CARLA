@@ -25,12 +25,17 @@ from carla.settings import CarlaSettings
 from carla.tcp import TCPConnectionError
 from carla.util import print_over_same_line
 
+'''
+This Python script will automatically collect RGB, semantic segmentation, and depth images from the CARLA simulation environment.
+To run in autonomous mode and collect images, run command: python data_collector.py --autopilot --images-to-disk
+Manual vehicle control is not supported at this time
+Configure the global variables, CARLA settings, and desired Cameras/Sensors below for your use case
+'''
+
+NUM_EPISODES = 90
+FRAMES_PER_EPISODE = 1000
 
 def run_carla_client(args):
-    # Here we will run 3 episodes with 300 frames each.
-    number_of_episodes = 90
-    frames_per_episode = 1000
-
     # We assume the CARLA server is already waiting for a client to connect at
     # host:port. To create a connection we can use the `make_carla_client`
     # context manager, it creates a CARLA client object and starts the
@@ -39,9 +44,8 @@ def run_carla_client(args):
     with make_carla_client(args.host, args.port) as client:
         print('CarlaClient connected')
 
-        for episode in range(0, number_of_episodes):
-            # Start a new episode.
-
+        for episode in range(0, NUM_EPISODES):
+            # Start a new episode
             if args.settings_filepath is None:
 
                 # Create a CarlaSettings object. This object is a wrapper around
@@ -57,31 +61,28 @@ def run_carla_client(args):
                     QualityLevel=args.quality_level)
                 settings.randomize_seeds()
 
-                # Now we want to add a couple of cameras to the player vehicle.
-                # We will collect the images produced by these cameras every
-                # frame.
-
+                # Camera/Sensor configuration
                 # The default camera captures RGB images of the scene.
                 camera0 = Camera('CameraRGB')
                 # Set image resolution in pixels.
                 camera0.set_image_size(800, 600)
-                # Set its position relative to the car in meters.
+                # Set its position relative to the car in meters (default is front center of windsheild)
                 camera0.set_position(0.30, 0, 1.30)
                 settings.add_sensor(camera0)
 
-                # Let's add another camera producing ground-truth depth.
+                # Create sensor for ground truth depth information
                 camera1 = Camera('CameraDepth', PostProcessing='Depth')
                 camera1.set_image_size(800, 600)
                 camera1.set_position(0.30, 0, 1.30)
                 settings.add_sensor(camera1)
 
+                # Create sensor for ground semantic segmentation information
                 camera2 = Camera('CameraSemanticSegmentation', PostProcessing='SemanticSegmentation')
-                # Set image resolution in pixels.
                 camera2.set_image_size(800, 600)
-                # Set its position relative to the car in meters.
                 camera2.set_position(0.30, 0, 1.30)
                 settings.add_sensor(camera2)
 
+                # Optional lidar data
                 if args.lidar:
                     lidar = Lidar('Lidar32')
                     lidar.set_position(0, 0, 2.50)
@@ -94,17 +95,14 @@ def run_carla_client(args):
                         UpperFovLimit=10,
                         LowerFovLimit=-30)
                     settings.add_sensor(lidar)
-
             else:
-
                 # Alternatively, we can load these settings from a file.
                 with open(args.settings_filepath, 'r') as fp:
                     settings = fp.read()
 
             # Now we load these settings into the server. The server replies
             # with a scene description containing the available start spots for
-            # the player. Here we can provide a CarlaSettings object or a
-            # CarlaSettings.ini file as string.
+            # the player.
             scene = client.load_settings(settings)
 
             # Choose one player start at random.
@@ -118,7 +116,7 @@ def run_carla_client(args):
             client.start_episode(player_start)
 
             # Iterate every frame in the episode.
-            for frame in range(0, frames_per_episode):
+            for frame in range(0, FRAMES_PER_EPISODE):
 
                 # Read the data produced by the server this frame.
                 measurements, sensor_data = client.read_data()
@@ -140,44 +138,28 @@ def run_carla_client(args):
                         img = to_rgb_array(measurement)
                         img = img[0: 390, 0: 799]
 
+                        # Save the image
                         im = Image.fromarray(img)
                         filename = args.out_filename_format.format(episode, name, episode, frame) + ".png"
                         im.save(filename)
 
-                # We can access the encoded data of a given image as numpy
-                # array using its "data" property. For instance, to get the
-                # depth value (normalized) at pixel X, Y
-                #
-                #     depth_array = sensor_data['CameraDepth'].data
-                #     value_at_pixel = depth_array[Y, X]
-                #
-
-                # Now we have to send the instructions to control the vehicle.
-                # If we are in synchronous mode the server will pause the
-                # simulation until we send this control.
-
+                # Vehicle control computation/output
                 if not args.autopilot:
-
+                    # Send uniform random inputs if autopilot is not enabled
                     client.send_control(
                         steer=random.uniform(-1.0, 1.0),
                         throttle=0.5,
                         brake=0.0,
                         hand_brake=False,
                         reverse=False)
-
                 else:
-
-                    # Together with the measurements, the server has sent the
-                    # control that the in-game autopilot would do this frame. We
-                    # can enable autopilot by sending back this control to the
-                    # server. We can modify it if wanted, here for instance we
-                    # will add some noise to the steer.
-
+                    # Determine autopilot control output
                     control = measurements.player_measurements.autopilot_control
                     control.steer += random.uniform(-0.1, 0.1)
                     client.send_control(control)
 
 
+# Prints information from captured measurements to the console (computed from CARLA environment)
 def print_measurements(measurements):
     number_of_agents = len(measurements.non_player_agents)
     player_measurements = measurements.player_measurements
