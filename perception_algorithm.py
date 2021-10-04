@@ -11,7 +11,7 @@
 from __future__ import print_function
 
 import argparse
-from carla_nn import CLASSES, COLORS
+from object_detection_nn import CLASSES, COLORS
 import cv2
 from numpy.testing._private.utils import measure
 import keyboard
@@ -33,7 +33,7 @@ from carla.util import print_over_same_line
 
 from carla.client import make_carla_client, VehicleControl
 
-import transforms as T
+import pytorch_utils.transforms as T
 
 # TODO: Update into a Python class
 # State variables 
@@ -47,10 +47,6 @@ IMAGE_DIR = "_out"
 GROUND_TRUTH_DIR = "GroundTruthRGB"
 LABEL_DIR = "Objects"
 FRAMES_PER_EPISODE = 1000
-
-
-
-
 
 
 # Receives the keyboard inputs from the user
