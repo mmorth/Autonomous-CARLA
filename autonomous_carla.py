@@ -164,6 +164,15 @@ class AutonomousCARLA():
                         cur_img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
 
                         # TODO: Compute and display object positions, depth, and lane lines
+                        # Detect object locations using trained model
+                        transform = T.ToTensor()
+                        input = transform(cur_img)[0]
+                        img = input.unsqueeze_(0)
+                        model.eval()
+                        pred = model(input.cuda())[0]
+                        if depth_img is not None and ss_img is not None:
+                            depth_img = depth_img.reshape(depth_img.shape[0], depth_img.shape[1])
+                            perception_stack.visualize_predictions(cur_img, depth_img, ss_img, pred, camera_fov)
 
                         prev_img = cur_img
                     elif name == 'CameraDepth':

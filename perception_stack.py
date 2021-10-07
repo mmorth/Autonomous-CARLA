@@ -15,19 +15,72 @@ The below AV features are planned (not part of perception stack):
 3. Mapping and Path Planning using state machines, maps, and graphs
 '''
 
+# Python Library/Package Imports
+import cv2
 import math
 import numpy as np
+
+# Project File Imports
+from object_detection_nn import CLASSES, COLORS
 
 
 ##########################################################################################
 # Object Distance Measurement ############################################################
 ##########################################################################################
 
+# TODO: Determine where/whether to keep global variables
+MIN_CONFIDENCE = 0.8
 
 # Draws the perception output on the current frame
-def visualize_perception_output(img, depth_img, ss_img):
-    # TODO: Create a method to visualize the perception output on the image
-    pass
+# Source: https://www.pyimagesearch.com/2021/08/02/pytorch-object-detection-with-pre-trained-networks/
+def visualize_predictions(orig, depth_img, ss_img, detections, fov):
+    # Detect and compute the x and y world coordinates from the depth map
+    x_world, y_world = __compute_xzy_from_depth(depth_img, fov)
+
+    global MIN_CONFIDENCE
+    global CLASSES
+    global COLORS
+    # loop over the detections
+    print("Found " + str(len(detections["boxes"])) + " detections!")
+    for i in range(0, len(detections["boxes"])):
+        # Extract the confidence (i.e., probability) associated with the prediction
+        confidence = detections["scores"][i]
+        # filter out weak detections by ensuring the confidence is
+        # greater than the minimum confidence
+        if confidence > MIN_CONFIDENCE:
+            # extract the index of the class label from the detections
+            idx = int(detections["labels"][i])
+            # if label is not in classes, set it to other label
+            if idx not in CLASSES:
+                idx = 25
+
+            # compute the (x, y)-coordinates of the bounding box for the object
+            box = detections["boxes"][i].detach().cpu().numpy()
+            (startX, startY, endX, endY) = box.astype("int")
+            label = "{}: {:.2f}%".format(CLASSES[idx], confidence * 100)
+            
+            # compute distance to the detected objects
+            distance = 1000 * compute_object_distance(box, x_world, y_world, depth_img)
+            label_distance = "{:.2f}m".format(distance)
+
+            # draw the bounding box and label on the image
+            cv2.rectangle(orig, (startX, startY), (endX, endY), COLORS[idx-1], 2)
+
+            # display the prediction to our terminal and on the image
+            print("[INFO] {}".format(label))
+            print("[INFO] {}".format(label_distance))
+
+            # compute the text locations on the image
+            y = startY - 15 if startY - 15 > 15 else startY + 15
+            yd = startY - 30 if startY - 30 > 30 else startY + 30
+            cv2.putText(orig, label, (startX, y),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx-1], 2)
+            cv2.putText(orig, label_distance, (startX, yd),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx-1], 2)
+
+    # show the output image
+    cv2.imshow("CameraRGB", orig)
+    cv2.waitKey(1)
 
 
 ##########################################################################################
@@ -67,7 +120,7 @@ def __compute_min_distance_to_impact(detection, x, y, z):
     pixel_distances = np.sqrt(x**2 + y**2 + z**2)
 
     # Compute the region roi of the object using bouding box coordinates of the detection
-    object_roi_distance = pixel_distances[detection[1]:detection[3], detection[0]:detection[1]]
+    object_roi_distance = pixel_distances[detection[1]:detection[3], detection[0]:detection[2]]
 
     # Compute and return the minimum distance from the roi
     return np.min(object_roi_distance)
