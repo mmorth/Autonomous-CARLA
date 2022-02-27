@@ -71,7 +71,7 @@ def get_keyboard_control():
 
 
 def xy_from_depth(depth, fov):
-    # Compute the camera intrinsic calibration matric   
+    # Compute the camera intrinsic calibration matrix   
     img_height, img_width = depth.shape
     
     z = depth[:,:,]

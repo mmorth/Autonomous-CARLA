@@ -4,7 +4,7 @@ import json
 import os
 import torch
 import torchvision
-import utils
+import test_algorithms
 
 import numpy as np
 import torch.onnx as onnx
@@ -146,11 +146,11 @@ def train_and_validate_nn(model=None):
     # define training and validation data loaders
     data_loader = torch.utils.data.DataLoader(
         dataset, batch_size=16, shuffle=True, num_workers=4,
-        collate_fn=utils.collate_fn)
+        collate_fn=test_algorithms.collate_fn)
 
     data_loader_test = torch.utils.data.DataLoader(
         dataset_test, batch_size=8, shuffle=False, num_workers=4,
-        collate_fn=utils.collate_fn)
+        collate_fn=test_algorithms.collate_fn)
 
     # get the model using our helper function
     if model == None:

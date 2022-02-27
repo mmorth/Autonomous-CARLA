@@ -4,7 +4,7 @@ import json
 import os
 import torch
 import torchvision
-import utils
+import test_algorithms
 
 import numpy as np
 import torch.onnx as onnx

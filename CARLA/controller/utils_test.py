@@ -3,7 +3,7 @@ import numpy as np
 import time
 import unittest
 
-import utils
+import test_algorithms
 
 
 class UtilsTest(unittest.TestCase):
@@ -19,7 +19,7 @@ class UtilsTest(unittest.TestCase):
         position_x = [1, 4]
         exp_pos_on_vec = np.asarray([2.0, 3.0])
 
-        pos_on_vec = utils.project_point(line_vec,
+        pos_on_vec = test_algorithms.project_point(line_vec,
                                          position_x)
         np.testing.assert_allclose(pos_on_vec,
                                    exp_pos_on_vec)
@@ -34,7 +34,7 @@ class UtilsTest(unittest.TestCase):
         position_x = [2, 3]
         exp_pos_on_vec = np.asarray([3.25, 3.79])
 
-        pos_on_vec = utils.project_point(line_vec,
+        pos_on_vec = test_algorithms.project_point(line_vec,
                                          position_x)
         np.testing.assert_allclose(pos_on_vec,
                                    exp_pos_on_vec,
@@ -50,7 +50,7 @@ class UtilsTest(unittest.TestCase):
         position_x = [-1, 1]
         exp_pos_on_vec = np.asarray(waypoint_1)
 
-        pos_on_vec = utils.project_point(line_vec,
+        pos_on_vec = test_algorithms.project_point(line_vec,
                                          position_x)
         np.testing.assert_allclose(pos_on_vec,
                                    exp_pos_on_vec)
@@ -65,7 +65,7 @@ class UtilsTest(unittest.TestCase):
         position_x = [6, 1]
         exp_pos_on_vec = np.asarray(waypoint_2)
 
-        pos_on_vec = utils.project_point(line_vec,
+        pos_on_vec = test_algorithms.project_point(line_vec,
                                          position_x)
         np.testing.assert_allclose(pos_on_vec,
                                    exp_pos_on_vec)
@@ -81,7 +81,7 @@ class UtilsTest(unittest.TestCase):
 
         exp_carrot = [3.85, 6.77]
 
-        carrot = utils.next_carrot(line_vec, pose_2d,
+        carrot = test_algorithms.next_carrot(line_vec, pose_2d,
                                    lookahead_dis)
 
         np.testing.assert_allclose(carrot,
@@ -100,7 +100,7 @@ class UtilsTest(unittest.TestCase):
 
         exp_delta_degrees = 63.43
 
-        delta = utils.calculate_delta(position,
+        delta = test_algorithms.calculate_delta(position,
                                       carrot,
                                       delta_max)
 
@@ -119,7 +119,7 @@ class UtilsTest(unittest.TestCase):
 
         exp_delta_degrees = 108.4
 
-        delta = utils.calculate_delta(position,
+        delta = test_algorithms.calculate_delta(position,
                                       carrot,
                                       delta_max)
 
@@ -139,7 +139,7 @@ class UtilsTest(unittest.TestCase):
         # are in the 3rd quadrant.
         exp_delta_degrees = -60
 
-        delta = utils.calculate_delta(position,
+        delta = test_algorithms.calculate_delta(position,
                                       carrot,
                                       delta_max)
 
@@ -159,7 +159,7 @@ class UtilsTest(unittest.TestCase):
         # are in the 3rd quadrant.
         exp_delta_degrees = -45
 
-        delta = utils.calculate_delta(position,
+        delta = test_algorithms.calculate_delta(position,
                                       carrot,
                                       delta_max)
 
@@ -179,7 +179,7 @@ class UtilsTest(unittest.TestCase):
 
         exp_delta_degrees = 30
 
-        delta = utils.calculate_delta(position,
+        delta = test_algorithms.calculate_delta(position,
                                       carrot,
                                       delta_max)
 
@@ -195,7 +195,7 @@ class UtilsTest(unittest.TestCase):
         waypoint_counter = 0
 
         wp1, wp2, update_traj = \
-            utils.update_waypoint_trajectory(waypoints_array,
+            test_algorithms.update_waypoint_trajectory(waypoints_array,
                                              waypoint_counter)
 
         self.assertEqual(wp1, w1)
@@ -204,7 +204,7 @@ class UtilsTest(unittest.TestCase):
 
         waypoint_counter += 1
         wp1, wp2, update_traj = \
-            utils.update_waypoint_trajectory(waypoints_array,
+            test_algorithms.update_waypoint_trajectory(waypoints_array,
                                              waypoint_counter)
 
         self.assertEqual(wp1, w2)
@@ -213,7 +213,7 @@ class UtilsTest(unittest.TestCase):
 
         waypoint_counter += 1
         wp1, wp2, update_traj = \
-            utils.update_waypoint_trajectory(waypoints_array,
+            test_algorithms.update_waypoint_trajectory(waypoints_array,
                                              waypoint_counter)
 
         self.assertEqual(wp1, w3)
@@ -222,7 +222,7 @@ class UtilsTest(unittest.TestCase):
 
         waypoint_counter += 1
         wp1, wp2, update_traj = \
-            utils.update_waypoint_trajectory(waypoints_array,
+            test_algorithms.update_waypoint_trajectory(waypoints_array,
                                              waypoint_counter)
 
         self.assertFalse(update_traj)
@@ -232,14 +232,14 @@ class UtilsTest(unittest.TestCase):
         point2 = [2, 2]
         exp_dist = 2.82
 
-        distance = utils.calculate_distance(point1, point2)
+        distance = test_algorithms.calculate_distance(point1, point2)
         self.assertAlmostEqual(distance, exp_dist, places=1)
 
         point1 = [10, 10]
         point2 = [0, 6]
         exp_dist = 10.77
 
-        distance = utils.calculate_distance(point1, point2)
+        distance = test_algorithms.calculate_distance(point1, point2)
         self.assertAlmostEqual(distance, exp_dist, places=1)
 
 

@@ -6,16 +6,19 @@ This repo contains experimental code for the CARLA Simulation Environment. The s
 * Run real-time bounding box object detection, depth estimation, and lane line/drivable space detection in the CARLA simulation environment (perception_algorithm.py will become perception_stack.py)
 
 ## Requirements
-* Install Python: [https://www.python.org/downloads/](https://www.python.org/downloads/)
 * Install Carla: [https://carla.readthedocs.io/en/latest/start_quickstart/](https://carla.readthedocs.io/en/latest/start_quickstart/)
-* Install PyTorch: [https://pytorch.org/get-started/locally/](https://pytorch.org/get-started/locally/)
+* Install Python: [https://www.python.org/downloads/](https://www.python.org/downloads/)
+* Install Python Dependencies: Navigate to root of this repo and run command
+    ```
+    pip install -r requirements.txt
+    ```
 
 ## Quickstart Guide
 This quickstart guide will walk through working with all the major features of this repo (assumes requirements are met):
 1. Starting the CARLA Simulation Environment Server:
     - In a command prompt, navigate to the directory containing CARLA.exe and run the below command:
         ```cmd
-        CarlaUE4.exe -windowed -carla-server
+        CarlaUE4.exe -windowed -carla-server -fps=20
         ```
 2. Collecting Sensor Data From CARLA
     - Navigate to the root of this repo, and run data_collector.py to collect sensor data from CARLA (modify the global variables to control number of episodes and frames to capture) using the following command:
@@ -43,14 +46,14 @@ This section describes the features of this repo as well as future features.
 
 ### Perception Features
 #### Data Collection, Labeling, and Training:
-* CARLA sensor data collection using the CARLA API
-* Auto labeling CARLA object's bounding boxes and class using the semantic segmentation image
+* CARLA sensor data collection using the CARLA API - **[COMPLETE! data_collector.py]** 
+* Auto labeling CARLA object's bounding boxes and class using the semantic segmentation image - **[COMPLETE! auto_labeler.py]**
 * Customizable Transfer Learning from VGG16 COCO pre-trained model using PyTorch
 #### Implemented Perception Stack:
 The following perception stack items can be executed in real-time detection
 * Object bounding box location from trained model
 * Distance estimation of detected objects using the disparity image
-* Lane detection using lane thresholding and Hough Transform
+* Lane detection using semantic segmentation image and edge detection
 #### Future Perception Stack:
 * Vehicle speed and trajectory estimation using Optical Flow
 * Vehicle localization using Visual Odometry
