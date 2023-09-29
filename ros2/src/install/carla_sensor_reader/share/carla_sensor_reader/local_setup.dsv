@@ -1,0 +1,2 @@
+source;share/carla_sensor_reader/environment/ament_prefix_path.sh
+source;share/carla_sensor_reader/environment/path.sh
