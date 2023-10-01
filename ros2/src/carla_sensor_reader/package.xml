@@ -5,7 +5,7 @@
   <version>0.0.0</version>
   <description>Reads sensor output from the CARLA autonomous vehicle simulator</description>
   <maintainer email="mmorth98@gmail.com">mmorth</maintainer>
-  <license>TODO: License declaration</license>
+  <license>Apache License 2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
